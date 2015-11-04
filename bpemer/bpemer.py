@@ -1,102 +1,79 @@
-import os
-from yaml_settings import YAMLSettings
-from colorama import init, Fore, Back, Style
+from colorama import Fore, Back, Style
+from tabulate import tabulate
+from utils import SimpleLine
 
-class SimpleLine(object):
-    def __init__(self, text, color=Fore.WHITE, background=Back.BLACK):
-        print
-        print(background + color + ' ' + text + ' ' + Style.RESET_ALL)
-        print
+from access import AccessSettings
+settings = AccessSettings()
 
 import spotipy
-import spotipy.util as util
-
-class AccessSettings(YAMLSettings):
-    YAML = os.path.join(
-        os.path.expanduser('~'),
-        '.bpemer.yml'
-    )
-
-    def __init__(self):
-        SimpleLine('Accessing yaml settings', Fore.BLACK, Back.GREEN)
-        self.load(self.YAML)
-        require = {
-            'echonet': {
-                'api_key': 'API Key',
-                'consumer_key': 'Consumer Key',
-                'shared_secret': 'Shared Secret',
-            },
-            'spotify': {
-                'client_id': 'Client ID',
-                'client_secret': 'Client Secret',
-                'redirect_uri': 'Redirect URI',
-                'username': 'Spotify Username'
-            }
-        }
- 
-        for k in require.keys():
-            if not k in self.data.keys():
-                self.data[k] = {}
-            for j in require[k].keys():
-                if not j in self.data[k].keys():
-                    self.data[k][j] =  raw_input(
-                        Fore.GREEN + 
-                        "Please enter your %s %s: " % (
-                            k,
-                            require[k][j]
-                        ) + 
-                        Style.RESET_ALL
-                    )
-
-        if not 'token' in self.data['spotify'].keys():
-            token = util.prompt_for_user_token(
-                self.data['spotify']['username'],
-                client_id=self.data['spotify']['client_id'],
-                client_secret=self.data['spotify']['client_secret'],
-                redirect_uri=self.data['spotify']['redirect_uri'],
-                scope='playlist-read-private'
-            )
-            self.data['spotify']['token'] = '%s' % token
-        self.save()
-
-settings = AccessSettings()
 sp = spotipy.Spotify(auth=settings.data['spotify']['token'])
 
 class Playlists:
+    def __init__(self, username):
+        playlists = sp.user_playlists(username)
+        playlists = playlists['items']
+        self.data = []
+        i = 1
+        for playlist in playlists:
+            p = {
+                'i': '%s)' % i,
+                'name': playlist['name'],
+                'id': playlist['id'],
+                'owner': '%s' % playlist['owner']['id']
+            }
+            i += 1
+            self.data.append(p)
+
+    def tabulate(self):
+        h = self.data[0].keys()
+        o = [[t[k] for k in t.keys()] for t in self.data]
+        print tabulate(o, headers=h)
+        print
+
+    def buildTracks(self, i):
+        p = self.data[i]
+        t = Tracks(
+            p['name'],
+            p['owner'],
+            p['id']
+        )
+        return t
+
+class Tracks:
     @classmethod
     def iterate_tracks(cls, tracks):
         ts = []
         for track in tracks:
+            track = track['track']
             t = {
-                'id': track['id'],
+                'uri': track['uri'],
+                'artist': track['artists'][0]['name'],
                 'name': track['name'],
-                'artist': track['artists'][0]['name']
             }
             ts.append(t)
-        return t
+        return ts
 
-    def __init__(self, username):
-        playlists = sp.user_playlists(username)
-        self.data = []
-        for playlist in playlists['items']:
-            p = {
-                'id': playlist['id'],
-                'name': playlist['name'],
-                'total_tracks': playlist['tracks']['total'],
-            }
-            results = sp.user_playlist(
-                username,
-                playlist['id'],
-                fields="tracks,next"
-            )
-            
-            tracks = results['tracks']
-            p['tracks'] = []
-            p['tracks'].append(Playlists.iterate_tracks(tracks))
-            while tracks['next']:
-                tracks = sp.next(tracks)
-                p['tracks'].append(Playlists.iterate_tracks(tracks))
-            self.data.append(p)
+    def __init__(self, name, owner, id):
+        self.name = name
+        self.owner = owner
+        self.id = id
+        results = sp.user_playlist(self.owner, self.id, fields="tracks,next")
+        tracks = results['tracks']
+        self.tracks = Tracks.iterate_tracks(tracks['items'])
+        while tracks['next']:
+            tracks = sp.next(tracks)
+            self.tracks = self.tracks + Tracks.iterate_tracks(tracks['items'])
+
+    def tabulate(self):
+        SimpleLine(self.name, Fore.BLACK, Back.GREEN)
+        h = self.tracks[0].keys()
+        o = [[t[k] for k in t.keys()] for t in self.tracks]
+        print tabulate(o, headers=h)
+        print
 
 playlists = Playlists(settings.data['spotify']['username'])
-print playlists.data
+playlists.tabulate()
+i = raw_input(Fore.GREEN + 'Choose playlist to analize: ' + Style.RESET_ALL)
+i = int(i) - 1
+tracks = playlists.buildTracks(i)
+tracks.tabulate()

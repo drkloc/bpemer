@@ -6,8 +6,6 @@ except ImportError:
     # Python 2..
     from UserDict import UserDict
 
-__all__ = ['YAMLSettings']
-
 class YAMLSettings(UserDict):
     def load(self, filename=None):
         if filename or not getattr(self, 'filename', None):
