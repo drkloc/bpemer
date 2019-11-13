@@ -1,12 +1,14 @@
 from colorama import Fore, Back, Style
 from tabulate import tabulate
 from utils import SimpleLine
+import pyen
 
 from access import AccessSettings
 settings = AccessSettings()
 
 import spotipy
 sp = spotipy.Spotify(auth=settings.data['spotify']['token'])
+en = pyen.Pyen(settings.data['echonet']['api_key'])
 
 class Playlists:
     def __init__(self, username):
@@ -49,6 +51,7 @@ class Tracks:
                 'uri': track['uri'],
                 'artist': track['artists'][0]['name'],
                 'name': track['name'],
+                'meta': {},
             }
             ts.append(t)
         return ts
@@ -63,6 +66,23 @@ class Tracks:
         while tracks['next']:
             tracks = sp.next(tracks)
             self.tracks = self.tracks + Tracks.iterate_tracks(tracks['items'])
+        for i in range(len(self.tracks)):
+            track = self.tracks[i].copy()
+            tid = track['uri']
+            try:
+                response = en.get(
+                    'song/profile', 
+                    track_id = tid,
+                    bucket= ['audio_summary', 'song_hotttnesss', 'artist_hotttnesss']
+                )
+                if response['status']['code'] == 0:
+                    song = response['songs'][0]
+                    for k in song['audio_summary'].keys():
+                        if k in ['tempo']:
+                          self.tracks[i]['meta'][k] = song['audio_summary'][k]  
+            except:
+                pass
+            
 
     def tabulate(self):
         SimpleLine(self.name, Fore.BLACK, Back.GREEN)
@@ -70,6 +90,7 @@ class Tracks:
         o = [[t[k] for k in t.keys()] for t in self.tracks]
         print tabulate(o, headers=h)
         print
+
 
 playlists = Playlists(settings.data['spotify']['username'])
 playlists.tabulate()
